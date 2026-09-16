@@ -1,442 +1,211 @@
 import streamlit as st
-import time
+import random
 import streamlit.components.v1 as components
 
-st.set_page_config(
-    page_title="거지 탈출 RPG",
-    page_icon="💰",
-    layout="centered",
-    initial_sidebar_state="collapsed",
-)
+st.set_page_config(page_title="거지 탈출 RPG", page_icon="💰", layout="centered")
 
-# -----------------------------
-# 게임 데이터
-# -----------------------------
 STAGES = [
-    {
-        "name": "1 STAGE · 시골 탈출",
-        "short": "시골",
-        "background": "🌾",
-        "description": "시골에서 돈을 모아 새로운 삶을 시작하자!",
-        "goal": 1_000_000,
-    },
-    {
-        "name": "2 STAGE · 길거리 탈출",
-        "short": "길거리",
-        "background": "🚶",
-        "description": "길거리에서 더 큰돈을 모아 반지하를 탈출하자!",
-        "goal": 5_000_000,
-    },
-    {
-        "name": "3 STAGE · 반지하 탈출",
-        "short": "반지하",
-        "background": "🏠",
-        "description": "반지하를 벗어나 1층 집으로 올라가자!",
-        "goal": 50_000_000,
-    },
-    {
-        "name": "4 STAGE · 1층 탈출",
-        "short": "1층집",
-        "background": "🏡",
-        "description": "더 넓은 집을 위해 2억 5천만 원을 모으자!",
-        "goal": 250_000_000,
-    },
-    {
-        "name": "5 STAGE · 지방도시 탈출",
-        "short": "지방도시 아파트",
-        "background": "🏙️",
-        "description": "지방도시 아파트를 넘어 최종 목표에 도전하자!",
-        "goal": 1_250_000_000,
-    },
+    {"name":"1 STAGE · 시골 탈출","bg":"🌾","goal":1_000_000,"art":"🌾  🏚️  🌳  🌾"},
+    {"name":"2 STAGE · 길거리 탈출","bg":"🚶","goal":5_000_000,"art":"🏢  🛣️  🏪  🚶"},
+    {"name":"3 STAGE · 반지하 탈출","bg":"🏠","goal":50_000_000,"art":"🪟  🏠  📦  🚪"},
+    {"name":"4 STAGE · 1층 탈출","bg":"🏡","goal":250_000_000,"art":"🏡  🌳  🚗  🧍"},
+    {"name":"5 STAGE · 지방도시 탈출","bg":"🏙️","goal":1_250_000_000,"art":"🏢  🏢  🚗  🏢"},
 ]
 
-DEFAULT_MONEY_PER_CLICK = 1_000
-BASE_UPGRADE_COST = 1_000
-
-
-def init_game():
-    defaults = {
-        "money": 0,
-        "stage": 0,
-        "money_per_click": DEFAULT_MONEY_PER_CLICK,
-        "extra_clicks": 0,
-        "click_upgrade_level": 0,
-        "extra_click_level": 0,
-        "last_gain": 0,
-        "gain_id": 0,
-        "cleared_stages": [],
-        "game_complete": False,
+def init():
+    values = {
+        "money":0, "stage":0, "click_value":1000, "extra_clicks":0,
+        "click_level":0, "extra_level":0, "cleared":[],
+        "effect":None, "rps_result":"", "odd_result":""
     }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+    for k,v in values.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
-
-def format_money(value):
-    value = int(value)
-    if value >= 100_000_000:
-        return f"{value / 100_000_000:.2f}억 원"
-    if value >= 10_000:
-        return f"{value / 10_000:.1f}만 원"
-    return f"{value:,}원"
-
+def fmt(n):
+    n = int(n)
+    if n >= 100_000_000: return f"{n/100_000_000:.2f}억 원"
+    if n >= 10_000: return f"{n/10_000:.1f}만 원"
+    return f"{n:,}원"
 
 def upgrade_cost(level):
-    # 1회차 1,000원, 이후 50% 상승
-    return int(BASE_UPGRADE_COST * (1.5 ** level))
+    return int(1000 * (1.5 ** level))
 
-
-def make_sound_and_effect(amount, effect_id):
-    # Web Audio API를 이용한 아주 짧은 효과음 + 떠오르는 +금액
-    html = f"""
-    <div id="gain-{effect_id}" style="
-        position:fixed;
-        left:50%;
-        top:42%;
-        transform:translate(-50%, -50%);
-        z-index:9999;
-        pointer-events:none;
-        font-family:Arial,sans-serif;
-        font-size:30px;
-        font-weight:900;
-        color:#ffe45c;
-        text-shadow:0 3px 8px #000;
-        animation:floatUp 0.85s ease-out forwards;
-    ">+{amount:,}</div>
+def effect(amount, effect_id):
+    # 클릭 직후 표시되는 독립 iframe 효과
+    components.html(f"""
+    <div class="money-effect">+{amount:,}원</div>
     <style>
-    @keyframes floatUp {{
-        0% {{ opacity:0; transform:translate(-50%, -20%); }}
-        15% {{ opacity:1; }}
-        100% {{ opacity:0; transform:translate(-50%, -170%); }}
+    body {{ margin:0; background:transparent; overflow:hidden; }}
+    .money-effect {{
+        position:fixed; left:50%; top:45%;
+        transform:translate(-50%,20px);
+        color:#ffe45c; font:bold 34px Arial;
+        text-shadow:0 3px 8px #000;
+        white-space:nowrap;
+        animation:moneyUp .9s ease-out forwards;
+    }}
+    @keyframes moneyUp {{
+        0% {{opacity:0; transform:translate(-50%,25px) scale(.75)}}
+        15% {{opacity:1; transform:translate(-50%,0) scale(1.05)}}
+        100% {{opacity:0; transform:translate(-50%,-120px) scale(1)}}
     }}
     </style>
     <script>
-    (() => {{
-        try {{
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            if (!AudioCtx) return;
-            const ctx = new AudioCtx();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = "sine";
-            osc.frequency.setValueAtTime(520, ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(760, ctx.currentTime + 0.08);
-            gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.01);
-            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.13);
-        }} catch (e) {{}}
-    }})();
+    try {{
+        const C=window.AudioContext||window.webkitAudioContext;
+        const c=new C(), o=c.createOscillator(), g=c.createGain();
+        o.type="sine";
+        o.frequency.setValueAtTime(600,c.currentTime);
+        o.frequency.exponentialRampToValueAtTime(850,c.currentTime+.08);
+        g.gain.setValueAtTime(.001,c.currentTime);
+        g.gain.exponentialRampToValueAtTime(.08,c.currentTime+.01);
+        g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.13);
+        o.connect(g); g.connect(c.destination); o.start();
+        o.stop(c.currentTime+.14);
+    }} catch(e) {{}}
     </script>
-    """
-    components.html(html, height=1)
+    """, height=170)
 
+init()
 
-init_game()
-
-# -----------------------------
-# CSS
-# -----------------------------
-st.markdown(
-    """
+st.markdown("""
 <style>
-    .stApp {
-        background:
-            radial-gradient(circle at 50% 0%, rgba(255,220,100,.13), transparent 35%),
-            linear-gradient(180deg, #171717 0%, #0d0d0d 100%);
-        color: #f5f5f5;
-    }
-
-    .block-container {
-        max-width: 680px;
-        padding-top: 1.2rem;
-        padding-bottom: 2rem;
-    }
-
-    .game-title {
-        text-align:center;
-        font-size:2.2rem;
-        font-weight:900;
-        letter-spacing:-2px;
-        margin-bottom:.1rem;
-    }
-
-    .sub-title {
-        text-align:center;
-        color:#aaa;
-        margin-bottom:1rem;
-    }
-
-    .stage-card {
-        border:1px solid #3a3a3a;
-        border-radius:20px;
-        overflow:hidden;
-        background:#191919;
-        box-shadow:0 12px 35px rgba(0,0,0,.35);
-        margin-bottom:14px;
-    }
-
-    .stage-bg {
-        height:155px;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        font-size:90px;
-        background:
-            linear-gradient(rgba(0,0,0,.08), rgba(0,0,0,.5)),
-            linear-gradient(135deg,#4c4938,#222);
-    }
-
-    .stage-info {
-        padding:14px 17px 8px;
-    }
-
-    .stage-name {
-        font-size:1.25rem;
-        font-weight:900;
-    }
-
-    .stage-description {
-        color:#aaa;
-        font-size:.9rem;
-        margin-top:3px;
-    }
-
-    .money-box {
-        text-align:center;
-        padding:12px;
-        margin:8px 0 10px;
-        background:#111;
-        border-radius:16px;
-        border:1px solid #333;
-    }
-
-    .money {
-        color:#ffe45c;
-        font-size:2.25rem;
-        font-weight:900;
-    }
-
-    .goal {
-        color:#aaa;
-        font-size:.9rem;
-    }
-
-    .bar {
-        height:14px;
-        background:#303030;
-        border-radius:99px;
-        overflow:hidden;
-        margin-top:9px;
-    }
-
-    .fill {
-        height:100%;
-        background:linear-gradient(90deg,#ffbd17,#ffe45c);
-        border-radius:99px;
-        transition:width .2s;
-    }
-
-    .shop-title {
-        font-size:1.25rem;
-        font-weight:900;
-        margin:16px 0 8px;
-    }
-
-    .hint {
-        text-align:center;
-        color:#888;
-        font-size:.82rem;
-        margin-top:4px;
-    }
-
-    button[kind="primary"] {
-        min-height:68px !important;
-        border-radius:18px !important;
-        font-size:1.25rem !important;
-        font-weight:900 !important;
-    }
-
-    div[data-testid="stHorizontalBlock"] {
-        gap:10px;
-    }
+.stApp{background:linear-gradient(180deg,#181818,#080808);color:#fff}
+.block-container{max-width:700px;padding-top:1rem}
+.title{text-align:center;font-size:2.35rem;font-weight:900}
+.sub{text-align:center;color:#999;margin-bottom:14px}
+.scene{height:205px;border-radius:22px;border:1px solid #444;position:relative;
+display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:0 15px 35px #0008}
+.scene0{background:linear-gradient(#84ccef 0 54%,#70834d 54% 100%)}
+.scene1{background:linear-gradient(#8cc9ee 0 48%,#666 48% 100%)}
+.scene2{background:linear-gradient(#444 0 50%,#121212 50% 100%)}
+.scene3{background:linear-gradient(#82ccef 0 54%,#687c50 54% 100%)}
+.scene4{background:linear-gradient(#72bee8 0 54%,#555 54% 100%)}
+.art{font-size:60px;text-shadow:0 5px 7px #0006}
+.character{position:absolute;bottom:15px;font-size:62px;filter:drop-shadow(0 6px 4px #0008)}
+.stage{text-align:center;font-size:1.3rem;font-weight:900;margin-top:10px}
+.card{background:#111;border:1px solid #383838;border-radius:18px;padding:15px;text-align:center;margin:10px 0}
+.money{font-size:2.45rem;font-weight:900;color:#ffe45c}
+.income{font-size:1.12rem;font-weight:900;color:#7dff8a;margin-top:5px}
+.need{font-weight:900;color:#ffabab;margin-top:5px}
+.bar{height:14px;background:#333;border-radius:99px;overflow:hidden;margin-top:10px}
+.fill{height:100%;background:linear-gradient(90deg,#ffb900,#ffe45c)}
+.section{font-size:1.3rem;font-weight:900;margin:20px 0 9px}
+.shop{background:#191919;border:1px solid #333;border-radius:16px;padding:15px;min-height:145px}
+.price{color:#ffe45c;font-weight:900;margin-top:12px}
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
-stage = STAGES[st.session_state.stage]
-goal = stage["goal"]
+s = STAGES[st.session_state.stage]
+total_click = st.session_state.click_value * (1 + st.session_state.extra_clicks)
+needed = max(0, s["goal"] + 1 - st.session_state.money)
+progress = min(100, st.session_state.money / s["goal"] * 100)
 
-# -----------------------------
-# 헤더
-# -----------------------------
-st.markdown('<div class="game-title">💸 거지 탈출 RPG</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="sub-title">클릭해서 돈을 벌고, 업그레이드해서 다음 스테이지로 탈출하세요.</div>',
-    unsafe_allow_html=True,
-)
+st.markdown('<div class="title">💸 거지 탈출 RPG</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub">클릭해서 돈을 벌고, 업그레이드와 도박으로 탈출하자!</div>', unsafe_allow_html=True)
 
-# -----------------------------
-# 스테이지 표시
-# -----------------------------
-stage_progress = min(100, st.session_state.money / goal * 100)
-
-st.markdown(
-    f"""
-<div class="stage-card">
-    <div class="stage-bg">{stage["background"]}</div>
-    <div class="stage-info">
-        <div class="stage-name">{stage["name"]}</div>
-        <div class="stage-description">{stage["description"]}</div>
-    </div>
+st.markdown(f"""
+<div class="scene scene{st.session_state.stage}">
+  <div class="art">{s["art"]}</div>
+  <div class="character">🧍</div>
 </div>
-
-<div class="money-box">
-    <div class="goal">현재 보유금</div>
-    <div class="money">{format_money(st.session_state.money)}</div>
-    <div class="goal">목표: {format_money(goal)} 초과</div>
-    <div class="bar">
-        <div class="fill" style="width:{stage_progress:.2f}%"></div>
-    </div>
+<div class="stage">{s["bg"]} {s["name"]}</div>
+<div class="card">
+  <div style="color:#999">현재 보유 금액</div>
+  <div class="money">{fmt(st.session_state.money)}</div>
+  <div class="income">🖱️ 클릭 1회 총 수익: +{total_click:,}원</div>
+  <div class="need">🎯 클리어까지 {fmt(needed)}</div>
+  <div style="color:#999">목표: {fmt(s["goal"])} 초과</div>
+  <div class="bar"><div class="fill" style="width:{progress:.2f}%"></div></div>
 </div>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
-# -----------------------------
-# 클릭
-# -----------------------------
-if st.button(
-    f"💰 돈 벌기  +{st.session_state.money_per_click:,}원",
-    type="primary",
-    use_container_width=True,
-):
-    gain = st.session_state.money_per_click * (1 + st.session_state.extra_clicks)
-    st.session_state.money += gain
-    st.session_state.last_gain = gain
-    st.session_state.gain_id += 1
-
-    # 화면 갱신 전 효과를 표시
-    make_sound_and_effect(gain, st.session_state.gain_id)
-
-    # 스테이지 클리어 판정
-    if st.session_state.money > goal:
-        if st.session_state.stage not in st.session_state.cleared_stages:
-            st.session_state.cleared_stages.append(st.session_state.stage)
-
-        if st.session_state.stage < len(STAGES) - 1:
+if st.button(f"💰 돈 벌기  +{total_click:,}원", type="primary", use_container_width=True):
+    st.session_state.money += total_click
+    st.session_state.effect = (total_click, st.session_state.get("effect", (0,0))[1] + 1)
+    if st.session_state.money > s["goal"]:
+        if st.session_state.stage not in st.session_state.cleared:
+            st.session_state.cleared.append(st.session_state.stage)
+        if st.session_state.stage < 4:
             st.session_state.stage += 1
+            st.toast("🎉 스테이지 클리어!")
         else:
-            st.session_state.game_complete = True
-
+            st.balloons()
+            st.toast("🏆 최종 탈출 성공!")
     st.rerun()
 
-st.markdown(
-    f'<div class="hint">현재 클릭 1회 = {st.session_state.money_per_click:,}원 × {1 + st.session_state.extra_clicks}회 취급</div>',
-    unsafe_allow_html=True,
-)
+if st.session_state.effect:
+    effect(st.session_state.effect[0], st.session_state.effect[1])
 
-# -----------------------------
-# 상점
-# -----------------------------
-st.markdown('<div class="shop-title">🛒 상점</div>', unsafe_allow_html=True)
+st.markdown('<div class="section">🛒 상점</div>', unsafe_allow_html=True)
+a,b=st.columns(2)
+cc=upgrade_cost(st.session_state.click_level)
+ec=upgrade_cost(st.session_state.extra_level)
 
-click_cost = upgrade_cost(st.session_state.click_upgrade_level)
-extra_cost = upgrade_cost(st.session_state.extra_click_level)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown(
-        f"""
-        <div style="background:#1b1b1b;border:1px solid #333;border-radius:16px;padding:15px;min-height:155px;">
-        <b>💵 클릭 수익 +1,000원</b><br>
-        <span style="color:#999;font-size:.85rem;">레벨 {st.session_state.click_upgrade_level}</span><br><br>
-        <span style="color:#ffe45c;font-weight:900;">{click_cost:,}원</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    if st.button(
-        f"구매 · {click_cost:,}원",
-        key="buy_click",
-        use_container_width=True,
-        disabled=st.session_state.money < click_cost,
-    ):
-        st.session_state.money -= click_cost
-        st.session_state.money_per_click += 1_000
-        st.session_state.click_upgrade_level += 1
+with a:
+    st.markdown(f'<div class="shop"><b>💵 클릭 수익 +1,000원</b><br><small>레벨 {st.session_state.click_level}<br>기본 클릭 수익: {st.session_state.click_value:,}원</small><div class="price">가격 {cc:,}원</div></div>',unsafe_allow_html=True)
+    if st.button(f"구매 · {cc:,}원",key="clickup",use_container_width=True,disabled=st.session_state.money<cc):
+        st.session_state.money-=cc
+        st.session_state.click_value+=1000
+        st.session_state.click_level+=1
         st.rerun()
 
-with col2:
-    st.markdown(
-        f"""
-        <div style="background:#1b1b1b;border:1px solid #333;border-radius:16px;padding:15px;min-height:155px;">
-        <b>⚡ 클릭당 +1회 취급</b><br>
-        <span style="color:#999;font-size:.85rem;">레벨 {st.session_state.extra_click_level}</span><br><br>
-        <span style="color:#ffe45c;font-weight:900;">{extra_cost:,}원</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    if st.button(
-        f"구매 · {extra_cost:,}원",
-        key="buy_extra",
-        use_container_width=True,
-        disabled=st.session_state.money < extra_cost,
-    ):
-        st.session_state.money -= extra_cost
-        st.session_state.extra_clicks += 1
-        st.session_state.extra_click_level += 1
+with b:
+    st.markdown(f'<div class="shop"><b>⚡ 클릭당 +1회 취급</b><br><small>레벨 {st.session_state.extra_level}<br>현재 취급 횟수: {1+st.session_state.extra_clicks}회</small><div class="price">가격 {ec:,}원</div></div>',unsafe_allow_html=True)
+    if st.button(f"구매 · {ec:,}원",key="extraup",use_container_width=True,disabled=st.session_state.money<ec):
+        st.session_state.money-=ec
+        st.session_state.extra_clicks+=1
+        st.session_state.extra_level+=1
         st.rerun()
 
-# -----------------------------
-# 진행 상황
-# -----------------------------
-st.markdown('<div class="shop-title">🗺️ 탈출 진행도</div>', unsafe_allow_html=True)
+st.markdown('<div class="section">🎰 도박장</div>',unsafe_allow_html=True)
+bet=st.number_input("베팅 금액",min_value=0,max_value=int(st.session_state.money),value=0,step=1000)
 
-for i, s in enumerate(STAGES):
-    if i in st.session_state.cleared_stages:
-        status = "✅ 클리어"
-    elif i == st.session_state.stage:
-        status = "🔥 진행 중"
-    else:
-        status = "🔒 잠김"
+g1,g2=st.columns(2)
 
-    st.markdown(
-        f"""
-        <div style="
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            padding:11px 13px;
-            margin:5px 0;
-            border-radius:12px;
-            background:{'#24200f' if i == st.session_state.stage else '#171717'};
-            border:1px solid {'#806d20' if i == st.session_state.stage else '#292929'};
-        ">
-            <span><b>{s["background"]} {s["short"]}</b></span>
-            <span style="color:#aaa;font-size:.85rem;">{format_money(s["goal"])} · {status}</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+with g1:
+    st.markdown("#### ✊ 가위바위보")
+    choice=st.selectbox("내 선택",["✊ 바위","✌️ 가위","🖐️ 보"],key="rps_choice")
+    if st.button("가위바위보 하기",key="rps",use_container_width=True,disabled=bet<=0):
+        options=["✊ 바위","✌️ 가위","🖐️ 보"]
+        enemy=random.choice(options)
+        p,e=options.index(choice),options.index(enemy)
+        if p==e:
+            result=f"🤝 무승부! 상대도 {enemy} · 베팅금 반환"
+        elif (p==0 and e==1) or (p==1 and e==2) or (p==2 and e==0):
+            st.session_state.money+=bet
+            result=f"🎉 승리! 상대: {enemy} · +{bet:,}원"
+        else:
+            st.session_state.money-=bet
+            result=f"💀 패배! 상대: {enemy} · -{bet:,}원"
+        st.session_state.rps_result=result
+        st.rerun()
+    if st.session_state.rps_result: st.info(st.session_state.rps_result)
 
-# -----------------------------
-# 게임 완료 / 초기화
-# -----------------------------
-if st.session_state.game_complete:
-    st.success("🎉 최종 탈출 성공! 모든 스테이지를 클리어했습니다!")
+with g2:
+    st.markdown("#### 🪙 홀짝")
+    oe=st.selectbox("내 선택",["홀","짝"],key="odd_choice")
+    if st.button("홀짝 하기",key="odd",use_container_width=True,disabled=bet<=0):
+        n=random.randint(1,100)
+        actual="홀" if n%2 else "짝"
+        if oe==actual:
+            st.session_state.money+=bet
+            result=f"🎉 정답! {n} → {actual} · +{bet:,}원"
+        else:
+            st.session_state.money-=bet
+            result=f"💀 틀림! {n} → {actual} · -{bet:,}원"
+        st.session_state.odd_result=result
+        st.rerun()
+    if st.session_state.odd_result: st.info(st.session_state.odd_result)
+
+st.markdown('<div class="section">🗺️ 탈출 진행도</div>',unsafe_allow_html=True)
+for i,x in enumerate(STAGES):
+    status="✅ 클리어" if i in st.session_state.cleared else ("🔥 진행 중" if i==st.session_state.stage else "🔒 잠김")
+    st.markdown(f'<div style="padding:11px;margin:5px 0;background:#171717;border-radius:12px;display:flex;justify-content:space-between"><b>{x["bg"]} {x["name"]}</b><span>{fmt(x["goal"])} · {status}</span></div>',unsafe_allow_html=True)
 
 st.divider()
-
-if st.button("🔄 게임 처음부터", use_container_width=True):
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
+if st.button("🔄 게임 처음부터",use_container_width=True):
+    for k in list(st.session_state.keys()):
+        del st.session_state[k]
     st.rerun()
-
-st.caption("※ 게임의 기본 구조와 아이디어를 바탕으로 제작한 개인 프로젝트입니다.")
